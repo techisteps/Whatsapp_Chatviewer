@@ -1,0 +1,33 @@
+# --- Python and Environment ---
+__pycache__/
+*.py[cod]
+*$py.class
+.env
+.venv
+venv/
+ENV/
+*.bak
+*.swp
+
+# --- Project-Specific Data (Private Chats & Media) ---
+# It is best practice to keep your private backup data out of version control.
+WhatsApp Chat with */
+*.txt
+*.jpg
+*.jpeg
+*.png
+*.mp4
+
+# --- Streamlit Specific ---
+.streamlit/config.toml
+.streamlit/secrets.toml
+
+# --- IDE and OS Metadata ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# --- Log files ---
+*.log
+pip-log.txt
