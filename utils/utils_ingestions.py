@@ -11,9 +11,12 @@ BASE_DIR = Path(".")
 INBOX = BASE_DIR / "inbox"
 PROCESS = BASE_DIR / "process"
 ARCHIVE = BASE_DIR / "archive"
-MEDIA_DIR = BASE_DIR / "media"
+MEDIA_ROOT = BASE_DIR / "media"
+DB_DIR = BASE_DIR / "db"
 
-for d in [PROCESS, ARCHIVE, MEDIA_DIR]: d.mkdir(exist_ok=True)
+# Ensure all directories exist
+for d in [PROCESS, ARCHIVE, MEDIA_ROOT, DB_DIR]:
+    d.mkdir(exist_ok=True)
 
 def get_md5_filename(filename):
     """Calculates MD5 hash of the filename string."""
@@ -30,50 +33,62 @@ def move_one_to_process():
     return dest_path
 
 def ingest_to_sqlite(zip_path):
-    """Extracts zip, parses text, and stores in SQLite."""
-    db_name = f"{get_md5_filename(zip_path.name)}.sqlite"
-    conn = sqlite3.connect(db_name)
-    cursor = conn.cursor()
+    """Extracts zip, parses text, and stores in SQLite in /db folder."""
+    # 1. Prepare DB Path
+    db_filename = f"{get_md5_filename(zip_path.name)}.sqlite"
+    db_path = DB_DIR / db_filename
     
-    # Create table for messages
-    cursor.execute('''CREATE TABLE IF NOT EXISTS messages 
-                     (timestamp TEXT, sender TEXT, content TEXT)''')
-
-    chat_specific_media = MEDIA_DIR / zip_path.stem
-    chat_specific_media.mkdir(exist_ok=True)
-
+    # 2. Extract and Parse
+    # Use context manager to ensure ZIP is closed before media move
     with zipfile.ZipFile(zip_path, 'r') as zip_ref:
         zip_ref.extractall(PROCESS)
-        files = zip_ref.namelist()
+        all_extracted_files = zip_ref.namelist()
+    
+    # Identify and process the text file
+    txt_files = [f for f in all_extracted_files if f.endswith('.txt')]
+    
+    if txt_files:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        cursor.execute('CREATE TABLE IF NOT EXISTS messages (timestamp TEXT, sender TEXT, content TEXT)')
         
-        # Identify text file (usually _chat.txt or WhatsApp Chat with...txt)
-        txt_files = [f for f in files if f.endswith('.txt')]
-        if txt_files:
-            txt_path = PROCESS / txt_files[0]
+        txt_path = PROCESS / txt_files[0]
+        try:
             with open(txt_path, 'r', encoding='utf-8') as f:
                 for line in f:
-                    # Basic WhatsApp Regex pattern (may vary by OS/Version)
                     match = re.match(r'\[?(\d{2}/\d{2}/\d{2,4},? \d{1,2}:\d{2}:\d{2})\]? (.*?): (.*)', line)
                     if match:
                         cursor.execute("INSERT INTO messages VALUES (?, ?, ?)", match.groups())
             conn.commit()
-            os.remove(txt_path)
+        finally:
+            conn.close() # Ensure DB handle is closed
+            if txt_path.exists():
+                os.remove(txt_path)
 
-        # Move remaining media files to chat-specific folder
-        for item in files:
-            if not item.endswith('.txt'):
-                file_in_process = PROCESS / item
-                if file_in_process.exists():
-                    shutil.move(str(file_in_process), str(chat_specific_media / item))
+    # 3. Organize Media
+    chat_media_folder = MEDIA_ROOT / zip_path.stem
+    chat_media_folder.mkdir(exist_ok=True)
 
-    conn.close()
-    # Archive the original zip
+    # Move remaining files from process to chat-specific media folder
+    for item in all_extracted_files:
+        file_in_process = PROCESS / item
+        if file_in_process.exists() and not item.endswith('.txt'):
+            target_media_path = chat_media_folder / item
+            # Create subdirectories if media has internal structure
+            target_media_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(file_in_process), str(target_media_path))
+
+    # 4. Cleanup: Archive the original zip
     shutil.move(str(zip_path), str(ARCHIVE / zip_path.name))
 
 if __name__ == "__main__":
     current_zip = move_one_to_process()
     if current_zip:
         print(f"Processing: {current_zip.name}")
-        ingest_to_sqlite(current_zip)
+        try:
+            ingest_to_sqlite(current_zip)
+            print("Successfully processed and archived.")
+        except Exception as e:
+            print(f"Failed to process {current_zip.name}: {e}")
     else:
-        print("No files to process in inbox.")
+        print("No files found in inbox.")

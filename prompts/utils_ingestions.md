@@ -26,3 +26,11 @@ New archive files will be placed in the `inbox` folder and the script should cop
 2. Create a function to extract the archive in `process` folder and read the txt file and store the messages in the SQLite database.
 3. After successfully reading the txt file, move other media files to chat specific folder and move respective inbox zip archive to `archive` folder.
 4. Keep DB file name as MD5 hash of the zip archive file name. Ingest each line of the txt file and store in DB.
+
+
+
+-------------------------------------------
+
+Few things to note:
+- Place DB files in db folder and media files in media folder
+- Use the MD5 hash of the zip archive name as the DB file name
